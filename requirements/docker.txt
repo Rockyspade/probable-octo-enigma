@@ -1,0 +1,26 @@
+# Requirements for our local docker development
+
+-r pip.txt
+-r debug.txt
+
+# https://www.psycopg.org/docs/install.html#psycopg-vs-psycopg-binary
+psycopg2-binary==2.9.2  # pyup: ignore
+
+django-redis-cache==3.0.0
+
+# For resizing images
+pillow==9.0.0
+
+# Local debugging tools
+watchdog==2.1.6
+# watchdog dependency
+argh==0.26.2
+
+# run tests
+tox==3.24.5
+
+# AWS utilities to use against MinIO
+awscli==1.22.41
+
+# Used together with structlog to have nicer logs locally
+rich==11.0.0
