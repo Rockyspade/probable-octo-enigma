@@ -1,0 +1,333 @@
+from urllib.parse import urlsplit
+
+import mock
+from django.contrib.auth.models import User
+from django.test import TestCase
+from django.urls import reverse
+from django_dynamic_fixture import get, new
+
+from readthedocs.builds.constants import EXTERNAL, LATEST
+from readthedocs.builds.models import Build, Version
+from readthedocs.core.models import UserProfile
+from readthedocs.core.permissions import AdminPermission
+from readthedocs.projects.constants import PUBLIC
+from readthedocs.projects.forms import UpdateProjectForm
+from readthedocs.projects.models import HTMLFile, Project
+
+
+class Testmaker(TestCase):
+
+    def setUp(self):
+        self.eric = User(username='eric')
+        self.eric.set_password('test')
+        self.eric.save()
+
+    def test_imported_docs(self):
+        # Test Import
+        self.client.login(username='eric', password='test')
+        user = User.objects.get(username='eric')
+        r = self.client.get('/dashboard/', {})
+        self.assertEqual(r.status_code, 200)
+        r = self.client.get('/dashboard/import/manual/', {})
+        self.assertEqual(r.status_code, 200)
+        form = UpdateProjectForm(
+            data={
+                'name': 'Django Kong',
+                'repo': 'https://github.com/ericholscher/django-kong',
+                'repo_type': 'git',
+                'description': 'OOHHH AH AH AH KONG SMASH',
+                'language': 'en',
+                'default_branch': '',
+                'project_url': 'http://django-kong.rtfd.org',
+                'default_version': LATEST,
+                'privacy_level': 'public',
+                'version_privacy_level': 'public',
+                'python_interpreter': 'python',
+                'documentation_type': 'sphinx',
+                'csrfmiddlewaretoken': '34af7c8a5ba84b84564403a280d9a9be',
+            },
+            user=user,
+        )
+        _ = form.save()
+        _ = Project.objects.get(slug='django-kong')
+
+        r = self.client.get('/projects/django-kong/builds/')
+        self.assertEqual(r.status_code, 200)
+        r = self.client.get('/dashboard/django-kong/edit/', {})
+        self.assertEqual(r.status_code, 200)
+        r = self.client.get('/dashboard/django-kong/subprojects/', {})
+        self.assertEqual(r.status_code, 200)
+
+
+class PrivateViewsAreProtectedTests(TestCase):
+    fixtures = ['eric', 'test_data']
+
+    def assertRedirectToLogin(self, response):
+        self.assertEqual(response.status_code, 302)
+        url = response['Location']
+        e_scheme, e_netloc, e_path, e_query, e_fragment = urlsplit(url)
+        self.assertEqual(e_path, reverse('account_login'))
+
+    def test_dashboard(self):
+        response = self.client.get('/dashboard/')
+        self.assertRedirectToLogin(response)
+
+    def test_import_wizard_start(self):
+        response = self.client.get('/dashboard/import/')
+        self.assertRedirectToLogin(response)
+
+    def test_import_wizard_manual(self):
+        response = self.client.get('/dashboard/import/manual/')
+        self.assertRedirectToLogin(response)
+
+    def test_import_wizard_demo(self):
+        response = self.client.get('/dashboard/import/manual/demo/')
+        self.assertRedirectToLogin(response)
+
+    def test_projects_manage(self):
+        response = self.client.get('/dashboard/pip/')
+        self.assertRedirectToLogin(response)
+
+    def test_edit(self):
+        response = self.client.get('/dashboard/pip/edit/')
+        self.assertRedirectToLogin(response)
+
+    def test_advanced(self):
+        response = self.client.get('/dashboard/pip/advanced/')
+        self.assertRedirectToLogin(response)
+
+    def test_version_delete_html(self):
+        response = self.client.get('/dashboard/pip/version/0.8.1/delete_html/')
+        self.assertRedirectToLogin(response)
+
+    def test_version_detail(self):
+        response = self.client.get('/dashboard/pip/version/0.8.1/')
+        self.assertRedirectToLogin(response)
+
+    def test_project_delete(self):
+        response = self.client.get('/dashboard/pip/delete/')
+        self.assertRedirectToLogin(response)
+
+    def test_subprojects_delete(self):
+        # This URL doesn't exist anymore, 404
+        response = self.client.get(
+            '/dashboard/pip/subprojects/delete/a-subproject/',
+        )
+        self.assertEqual(response.status_code, 404)
+        # New URL
+        response = self.client.get(
+            '/dashboard/pip/subprojects/a-subproject/delete/',
+        )
+        self.assertRedirectToLogin(response)
+
+    def test_subprojects(self):
+        response = self.client.get('/dashboard/pip/subprojects/')
+        self.assertRedirectToLogin(response)
+
+    def test_project_users(self):
+        response = self.client.get('/dashboard/pip/users/')
+        self.assertRedirectToLogin(response)
+
+    def test_project_users_delete(self):
+        response = self.client.get('/dashboard/pip/users/delete/')
+        self.assertRedirectToLogin(response)
+
+    def test_project_notifications(self):
+        response = self.client.get('/dashboard/pip/notifications/')
+        self.assertRedirectToLogin(response)
+
+    def test_project_notifications_delete(self):
+        response = self.client.get('/dashboard/pip/notifications/delete/')
+        self.assertRedirectToLogin(response)
+
+    def test_project_translations(self):
+        response = self.client.get('/dashboard/pip/translations/')
+        self.assertRedirectToLogin(response)
+
+    def test_project_translations_delete(self):
+        response = self.client.get(
+            '/dashboard/pip/translations/delete/a-translation/',
+        )
+        self.assertRedirectToLogin(response)
+
+    def test_project_redirects(self):
+        response = self.client.get('/dashboard/pip/redirects/')
+        self.assertRedirectToLogin(response)
+
+    def test_project_redirects_delete(self):
+        response = self.client.get('/dashboard/pip/redirects/delete/')
+        self.assertRedirectToLogin(response)
+
+
+class RandomPageTests(TestCase):
+    fixtures = ['eric', 'test_data']
+
+    def setUp(self):
+        self.pip = Project.objects.get(slug='pip')
+        self.pip_version = self.pip.versions.all()[0]
+        HTMLFile.objects.create(
+            project=self.pip,
+            version=self.pip_version,
+            name='file.html',
+            slug='file',
+            path='file.html',
+            md5='abcdef',
+            commit='1234567890abcdef',
+        )
+
+    def test_random_page_view_redirects(self):
+        response = self.client.get('/random/')
+        self.assertEqual(response.status_code, 302)
+
+    def test_takes_project_slug(self):
+        response = self.client.get('/random/pip/')
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue('pip' in response['Location'])
+
+    def test_404_for_unknown_project(self):
+        response = self.client.get('/random/not-existent/')
+        self.assertEqual(response.status_code, 404)
+
+    def test_404_for_with_no_html_files(self):
+        HTMLFile.objects.all().delete()
+        response = self.client.get('/random/pip/')
+        self.assertEqual(response.status_code, 404)
+
+
+class SubprojectViewTests(TestCase):
+
+    def setUp(self):
+        self.user = new(User, username='test')
+        self.user.set_password('test')
+        self.user.save()
+
+        self.project = get(Project, slug='my-mainproject')
+        self.subproject = get(Project, slug='my-subproject')
+        self.project.add_subproject(self.subproject)
+
+        self.client.login(username='test', password='test')
+
+    def test_deny_delete_for_non_project_admins(self):
+        response = self.client.get(
+            '/dashboard/my-mainproject/subprojects/delete/my-subproject/',
+        )
+        self.assertEqual(response.status_code, 404)
+
+        self.assertTrue(
+            self.subproject in
+            [r.child for r in self.project.subprojects.all()],
+        )
+
+    def test_admins_can_delete_subprojects(self):
+        self.project.users.add(self.user)
+        self.subproject.users.add(self.user)
+
+        # URL doesn't exist anymore, 404
+        response = self.client.get(
+            '/dashboard/my-mainproject/subprojects/delete/my-subproject/',
+        )
+        self.assertEqual(response.status_code, 404)
+        # This URL still doesn't accept GET, 405
+        response = self.client.get(
+            '/dashboard/my-mainproject/subprojects/my-subproject/delete/',
+        )
+        self.assertEqual(response.status_code, 405)
+        self.assertTrue(
+            self.subproject in
+            [r.child for r in self.project.subprojects.all()],
+        )
+        # Test POST
+        response = self.client.post(
+            '/dashboard/my-mainproject/subprojects/my-subproject/delete/',
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(
+            self.subproject not in
+            [r.child for r in self.project.subprojects.all()],
+        )
+
+    def test_project_admins_can_delete_subprojects_that_they_are_not_admin_of(
+            self,
+    ):
+        self.project.users.add(self.user)
+        self.assertFalse(AdminPermission.is_admin(self.user, self.subproject))
+
+        response = self.client.post(
+            '/dashboard/my-mainproject/subprojects/my-subproject/delete/',
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(
+            self.subproject not in
+            [r.child for r in self.project.subprojects.all()],
+        )
+
+
+class BuildViewTests(TestCase):
+    fixtures = ['eric', 'test_data']
+
+    def setUp(self):
+        self.client.login(username='eric', password='test')
+        self.pip = Project.objects.get(slug='pip')
+
+    @mock.patch('readthedocs.projects.tasks.update_docs_task')
+    def test_build_redirect(self, mock):
+        r = self.client.post('/projects/pip/builds/', {'version_slug': '0.8.1'})
+        build = Build.objects.filter(project__slug='pip').latest()
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(
+            r._headers['location'][1],
+            '/projects/pip/builds/%s/' % build.pk,
+        )
+
+    def test_build_list_includes_external_versions(self):
+        external_version = get(
+            Version,
+            project=self.pip,
+            active=True,
+            type=EXTERNAL,
+            privacy_level=PUBLIC,
+        )
+        external_version_build = get(
+            Build,
+            project=self.pip,
+            version=external_version
+        )
+        self.pip.privacy_level = PUBLIC
+        self.pip.save()
+        response = self.client.get(
+            reverse('builds_project_list', args=[self.pip.slug]),
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(external_version_build, response.context['build_qs'])
+
+
+class HomepageViewTests(TestCase):
+
+    def setUp(self):
+        self.homepage_url = reverse('homepage')
+
+    def test_projects_count(self):
+        user_1 = get(User)
+        profile_1 = get(UserProfile, user=user_1, banned=True)
+
+        user_2 = get(User)
+        profile_2 = get(UserProfile, user=user_2, banned=True)
+
+        user_3 = get(User)
+        profile_3 = get(UserProfile, user=user_3, banned=False)
+
+        project_a = get(Project, users=[user_1])
+        project_b = get(Project, users=[user_2])
+        project_c = get(Project, users=[user_3])
+
+        spam_proj_count = Project.objects.filter(users__profile__banned=True).count()
+
+        self.assertEqual(spam_proj_count, 2)
+        self.assertEqual(User.objects.all().count(), 3)
+        self.assertEqual(User.objects.filter(profile__banned=True).count(), 2)
+
+        expected_count = Project.objects.all().count() - spam_proj_count
+        response = self.client.get(self.homepage_url)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(expected_count, response.context['projects_count'])
