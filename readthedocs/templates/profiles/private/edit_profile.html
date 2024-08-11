@@ -1,0 +1,14 @@
+{% extends "profiles/base_profile_edit.html" %}
+{% load crispy_forms_tags %}
+
+{% load i18n %}
+
+{% block title %}{% trans "Edit your profile" %}{% endblock %}
+
+{% block profile-admin-details %}active{% endblock %}
+
+{% block edit_content_header %} {% trans "Edit your profile" %} {% endblock %}
+
+{% block edit_content %}
+    {% crispy form %}
+{% endblock %}
