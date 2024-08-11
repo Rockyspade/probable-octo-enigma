@@ -1,0 +1,11 @@
+# Requirements for our production systems
+
+-r pip.txt
+
+psycopg2
+
+structlog-sentry
+
+newrelic
+
+ipython
