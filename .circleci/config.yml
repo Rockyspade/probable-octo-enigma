@@ -1,0 +1,22 @@
+version: 2.1
+
+setup: true
+
+orbs:
+  path-filtering: circleci/path-filtering@0.1.3
+
+workflows:
+  generate-config:
+    jobs:
+      - path-filtering/filter:
+          base-revision: main
+          config-path: .circleci/config-conditional-builds.yml
+          mapping: |
+            requirements/.* build-code true
+            readthedocs/.* build-code true
+            pytest.* build-code true
+            tox.* build-code true
+            package.* build-code true
+            \.circleci/* build-code true
+            common build-code true
+            setup.* build-code true
