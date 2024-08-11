@@ -1,0 +1,9 @@
+# Requirements for our production systems
+
+-r pip.txt
+
+structlog-sentry
+
+newrelic
+
+ipython
